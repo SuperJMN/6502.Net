@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using Antlr4.Runtime;
 using Antlr4.Runtime.Atn;
@@ -18,7 +19,7 @@ public class Z80Assembler
         if (_services.Log.HasErrors)
         {
             _services.Log.DumpErrors(_services.Options.NoHighlighting);
-            return Result.Failure<AssemblyData>(_services.Log.ToString());
+            return Result.Failure<AssemblyData>(FormatErrors(_services.Log.Errors));
         }
 
         var passNeeded = true;
@@ -35,8 +36,25 @@ public class Z80Assembler
             passNeeded = _services.State.PassNeeded;
         }
 
+        if (_services.Log.HasErrors)
+        {
+            _services.Log.DumpErrors(_services.Options.NoHighlighting);
+            return Result.Failure<AssemblyData>(FormatErrors(_services.Log.Errors));
+        }
+
         var debugInfo = _services.DebugInfo.Distinct().OrderBy(x => x.Line);
         return new AssemblyData(_services.Output.GetCompilation().ToArray(), debugInfo);
+    }
+
+    private string FormatErrors(IEnumerable<Error> readOnlyCollection)
+    {
+        var formattedErrorLines = readOnlyCollection.Select(error =>
+        {
+            var tokenPart = error.Token != null ? "'" + error.Token.Text + "'" : string.Empty;
+            return $"{error.LineNumber}:{error.Position}: {error.Message} {tokenPart}";
+        });
+
+        return string.Join(Environment.NewLine, formattedErrorLines);
     }
 
     private void DoPass(IParseTree parse)
