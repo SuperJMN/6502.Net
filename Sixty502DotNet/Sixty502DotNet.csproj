@@ -70,7 +70,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <!-- Override transitive vulnerability: align System.Drawing.Common to secure version -->
+    <!-- Pin patched System.Drawing.Common to avoid NU1904 while not using the API -->
     <PackageReference Include="System.Drawing.Common" Version="8.0.7" />
   </ItemGroup>
   <ItemGroup>
