@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ReleaseVersion>4.4.1</ReleaseVersion>
+    <PackageId>Zafiro.Compilers.Sixty502DotNet.Shared</PackageId>
   </PropertyGroup>
 
   <ItemGroup>

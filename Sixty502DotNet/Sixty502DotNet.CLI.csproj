@@ -5,7 +5,7 @@
     <TargetFramework>net7.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <RollForward>Major</RollForward>
-    <PackageId>6502.Net</PackageId>
+    <PackageId>Zafiro.Compilers.Sixty502DotNet.CLI</PackageId>
     <Version>4.4.1.0</Version>
     <Authors>informedcitizenry</Authors>
     <Company>informedcitizenry</Company>

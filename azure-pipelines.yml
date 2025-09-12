@@ -1,0 +1,22 @@
+variables:
+- group: api-keys
+- name: Agent.Source.Git.ShallowFetchDepth
+  value: 0
+
+steps:
+- checkout: self
+
+- pwsh: dotnet tool install --global DotnetPackaging.DeployerTool
+  displayName: Install DotnetPackaging.DeployerTool
+
+- pwsh: dotnetdeployer nuget --api-key $env:NUGET_API_KEY
+  displayName: Publish NuGet packages
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/master')
+  env:
+    NUGET_API_KEY: $(NuGetApiKey)
+
+- pwsh: dotnetdeployer nuget --api-key $env:NUGET_API_KEY --no-push
+  displayName: Publish NuGet packages (dry run)
+  condition: ne(variables['Build.SourceBranch'], 'refs/heads/master')
+  env:
+    NUGET_API_KEY: $(NuGetApiKey)
