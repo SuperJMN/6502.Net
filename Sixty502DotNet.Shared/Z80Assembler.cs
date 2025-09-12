@@ -1,129 +1,111 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Antlr4.Runtime;
-using Antlr4.Runtime.Atn;
-using Antlr4.Runtime.Tree;
+using System.Text.RegularExpressions;
 using CSharpFunctionalExtensions;
+using Sixty502DotNet.Runtime;
+using Sixty502DotNet.Shared;
 
 namespace Sixty502DotNet;
 
 public class Z80Assembler
 {
-    private CodeGenVisitor _codeGenVisitor;
-    private readonly AssemblyServices _services = new(Options.FromArgs(new[] { "-c", "z80", "--list", "fake.s" }));
-
+    // Ensambla código Z80 usando la API moderna del upstream (ProgramParser/Interpreter)
+    // y expone un resultado funcional con binario y una depuración mínima
+    // derivada de las listings generadas por el intérprete.
     public Result<AssemblyData> Assemble(string input)
-    {
-        var parsedSource = ParseSource(input);
-        if (_services.Log.HasErrors)
-        {
-            _services.Log.DumpErrors(_services.Options.NoHighlighting);
-            return Result.Failure<AssemblyData>(FormatErrors(_services.Log.Errors));
-        }
-
-        var passNeeded = true;
-        while (passNeeded && !_services.Log.HasErrors)
-        {
-            if (_services.State.CurrentPass > 4)
-            {
-                _services.Log.LogEntrySimple("Too many passes attempted.");
-                break;
-            }
-
-            DoPass(parsedSource!);
-            _services.State.CurrentPass++;
-            passNeeded = _services.State.PassNeeded;
-        }
-
-        if (_services.Log.HasErrors)
-        {
-            _services.Log.DumpErrors(_services.Options.NoHighlighting);
-            return Result.Failure<AssemblyData>(FormatErrors(_services.Log.Errors));
-        }
-
-        var debugInfo = _services.DebugInfo.Distinct().OrderBy(x => x.Line);
-        return new AssemblyData(_services.Output.GetCompilation().ToArray(), debugInfo);
-    }
-
-    private string FormatErrors(IEnumerable<Error> readOnlyCollection)
-    {
-        var formattedErrorLines = readOnlyCollection.Select(error =>
-        {
-            var tokenPart = error.Token != null ? "'" + error.Token.Text + "'" : string.Empty;
-            return $"{error.LineNumber}:{error.Position}: {error.Message} {tokenPart}";
-        });
-
-        return string.Join(Environment.NewLine, formattedErrorLines);
-    }
-
-    private void DoPass(IParseTree parse)
-    {
-        var currentPassVar = _services.Symbols.GlobalScope.Resolve("CURRENT_PASS") as Constant;
-        currentPassVar!.Value.SetAs(new Value(_services.State.CurrentPass + 1));
-        _codeGenVisitor.Reset();
-        _services.Output.Reset();
-        _services.StatementListings.Clear();
-        _services.LabelListing.Clear();
-        _services.Symbols.Reset();
-        _services.State.PassNeeded = false;
-        _ = _codeGenVisitor?.Visit(parse);
-    }
-
-    private Sixty502DotNetParser.SourceContext? ParseSource(string input)
     {
         try
         {
-            var preprocessor = new Preprocessor(_services, CharStreams.fromString(input));
-            var lexer = preprocessor.Lexer;
-            if (lexer == null)
+            var options = new Options
             {
-                // this could happen if the source input file was not found.
-                return null;
-            }
-
-            var stream = new CommonTokenStream(lexer);
-
-            _codeGenVisitor = new CodeGenVisitor(_services, lexer.InstructionSet!);
-
-            var tokens = stream.GetTokens();
-            var errorTokens = tokens.Where(t => t.Channel == Sixty502DotNetLexer.ERROR).ToList();
-            for (var i = 0; i < errorTokens.Count; ++i)
-            {
-                _services.Log.LogEntry((Token)errorTokens[i], Errors.UnexpectedExpression);
-            }
-
-            if (!_services.Log.HasErrors)
-            {
-                stream.Reset();
-                var parser = new Sixty502DotNetParser(stream)
+                ArchitectureOptions = new ArchitectureOptions
                 {
-                    Symbols = _services.Symbols
-                };
-                parser.Interpreter.PredictionMode = PredictionMode.SLL;
-                parser.RemoveErrorListeners();
-                parser.AddErrorListener(_services.Log);
-                var parse = parser.source();
-                // parse tree first before constructing code gen visitor to ensure the lexer's
-                // instruction set will be initialized to the correct one (this happens during lexical phase).
-                _codeGenVisitor = new CodeGenVisitor(_services, lexer.InstructionSet!);
-                if (_services.Options.WarnLeft)
+                    Cpuid = "z80",
+                    AutosizeRegisters = false,
+                    BranchAlways = false,
+                    LongAddressing = false,
+                },
+                GeneralOptions = new GeneralOptions
                 {
-                    foreach (var label in parser.LabelsAfterWhitespace)
-                    {
-                        _services.Log.LogEntry((Token)label, "Whitespace precedes label.", false);
-                    }
+                    CaseSensitive = false,
+                    ResetPCOnBank = false,
+                    Defines = Array.Empty<string>(),
+                    IncludePath = null,
+                    Sections = Array.Empty<string>()
+                },
+                OutputOptions = new OutputOptions
+                {
+                    Format = null,
+                    NoSource = false,
+                    NoAssembly = false,
+                    NoDisassembly = false,
+                    LabelsOnly = false,
+                    ViceLabels = false,
+                    TruncateAssembly = false,
+                    VerboseList = false,
+                },
+                DiagnosticOptions = new DiagnosticOptions
+                {
+                    EchoEachPass = false,
+                    NoHighlighting = true,
+                    WarnJumpBug = false,
+                    WarnTextInNonTextPseudoOp = false,
+                    WarningsAsErrors = false,
+                    WarnWhitespaceBeforeLabels = false,
+                    DoNotWarnAboutUnusedSections = true,
+                    WarnCaseMismatch = false,
+                    WarnRegistersAsIdentifiers = false,
+                    WarnSimplifyCallReturn = false,
+                    WarnOfUnreferencedSymbols = false,
                 }
+            };
 
-                return parse;
+            var interpreter = new Shared.Interpreter(options, new FileSystemBinaryReader(null));
+            var state = interpreter.Exec(new List<string> { input }, new StringSourceFactory());
+
+            if (state.Errors.Count > 0)
+            {
+                var errText = string.Join(System.Environment.NewLine, state.Errors.Select(e =>
+                {
+                    var tokenPart = e.Token != null ? $" '{e.Token.Text}'" : string.Empty;
+                    return $"{e.Line}:{e.Column}: {e.Message}{tokenPart}";
+                }));
+                return Result.Failure<AssemblyData>(errText);
             }
 
-            return null;
+            var bytes = state.Output.GetCompilation().ToArray();
+            var debug = BuildDebugInfoFromListings(state.StatementListings);
+            return Result.Success(new AssemblyData(bytes, debug));
         }
         catch (Exception ex)
         {
-            _services.Log.LogEntrySimple(ex.Message);
-            return null;
+            return Result.Failure<AssemblyData>(ex.Message);
         }
+    }
+
+    private static IEnumerable<DebugEntry> BuildDebugInfoFromListings(IList<string> listings)
+    {
+        // Cada elemento en listings puede contener múltiples líneas; la primera línea
+        // suele incluir dirección y el texto de la instrucción origen al final.
+        // Formato (aprox):
+        //   {PChex}    {bytes...}[padding]{disasm-padded}{source}
+        var entries = new List<DebugEntry>();
+        var rePc = new Regex(@"^[^0-9a-fA-F]?([0-9a-fA-F]{4})\s+", RegexOptions.Compiled);
+
+        foreach (var block in listings)
+        {
+            var firstLine = block.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n').FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(firstLine)) continue;
+
+            var m = rePc.Match(firstLine);
+            if (!m.Success) continue;
+            var pc = Convert.ToInt32(m.Groups[1].Value, 16);
+
+            // La fuente suele empezar después de 32 (addr+bytes) + 24 (disasm) columnas ≈ 56
+            string lineText = firstLine.Length > 56 ? firstLine[56..].Trim() : firstLine.Trim();
+            entries.Add(new DebugEntry(0, pc, lineText));
+        }
+        return entries;
     }
 }

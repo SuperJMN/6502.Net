@@ -12,6 +12,7 @@
         <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Antlr4.Runtime.Standard" Version="4.13.1" />
+    <PackageReference Include="CSharpFunctionalExtensions" Version="2.30.0" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="Parser\" />
