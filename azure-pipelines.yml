@@ -6,8 +6,8 @@ variables:
 steps:
 - checkout: self
 
-- pwsh: dotnet tool install --global DotnetPackaging.DeployerTool
-  displayName: Install DotnetPackaging.DeployerTool
+- pwsh: dotnet tool install --global DotnetDeployer
+  displayName: Install DotnetDeployer
 
 - pwsh: dotnetdeployer nuget --api-key $env:NUGET_API_KEY
   displayName: Publish NuGet packages
