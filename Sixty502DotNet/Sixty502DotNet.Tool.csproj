@@ -7,14 +7,20 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     
+    <!-- .NET Tool configuration -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>6502net</ToolCommandName>
+    
     <!-- Package metadata -->
-    <PackageId>Zafiro.Compilers.Sixty502DotNet.CLI</PackageId>
+    <PackageId>Zafiro.Compilers.Sixty502DotNet.Tool</PackageId>
     <AssemblyName>6502.Net</AssemblyName>
     <Product>6502.Net</Product>
-    <Description>6502.Net, A .Net Cross Assembler for Several 8-Bit Microprocessors - CLI tool (Zafiro fork)</Description>
+    <Description>6502.Net, A .Net Cross Assembler for Several 8-Bit Microprocessors - .NET Global Tool (Zafiro fork)</Description>
     <Authors>informedcitizenry</Authors>
     <Copyright>Copyright (c) 2017-2024 informedcitizenry</Copyright>
     <PackageProjectUrl>https://github.com/informedcitizenry/6502.Net</PackageProjectUrl>
+    <PackageTags>6502;assembler;cross-assembler;z80;m6800;m6809;i8080;retro;8bit;dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +29,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sixty502DotNet.Shared\Sixty502DotNet.Shared.csproj" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
