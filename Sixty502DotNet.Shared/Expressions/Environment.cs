@@ -13,6 +13,8 @@ namespace Sixty502DotNet.Shared;
 public static class Environment
 {
     private readonly static Random s_rng = new();
+    private static bool s_prototypesInitialized;
+    private static readonly object s_prototypeInitLock = new();
 
     static Environment()
     {
@@ -39,6 +41,15 @@ public static class Environment
         DefineConstant(name, function, scope);
     }
 
+    // Avoid redefining prototype members across multiple Init() calls in the same process
+    private static void BuiltInPrototypeFunction(string name, BuiltInFunctionObject function, Prototype prototype)
+    {
+        if (prototype.ResolveMember(name) == null)
+        {
+            DefineConstant(name, function, prototype);
+        }
+    }
+
     /// <summary>
     /// Define a constant symbol.
     /// </summary>
@@ -60,6 +71,14 @@ public static class Environment
     public static void Init(AssemblyServices services)
     {
         IScope scope = services.State.Symbols.GlobalScope;
+
+        // Early exit if this scope was already initialized in this process
+        if (scope.Lookup("CURRENT_PASS") is not null)
+        {
+            return;
+        }
+
+        // Global constants
         DefineConstant("CURRENT_PASS", 0, scope);
         DefineConstant("INT8_MAX", sbyte.MaxValue, scope);
         DefineConstant("INT8_MIN", sbyte.MinValue, scope);
@@ -81,6 +100,7 @@ public static class Environment
         DefineConstant("UINT32_MAX", uint.MaxValue, scope);
         DefineConstant("UINT32_MIN", uint.MinValue, scope);
 
+        // Global built-in functions
         BuiltInFunction("binary", new BinaryFunction(), scope);
         BuiltInFunction("cbmflt", new CbmFloatFunction(services.State.Output, false), scope);
         BuiltInFunction("cbmfltp", new CbmFloatFunction(services.State.Output, true), scope);
@@ -95,6 +115,7 @@ public static class Environment
         BuiltInFunction("sizeof", new SizeofFunction(), scope);
         BuiltInFunction("typeof", new TypeofFunction(services), scope);
 
+        // Math functions
         MathFunction("abs", p => Math.Abs(p[0]), 1, scope);
         MathFunction("atan", p => Math.Atan(p[0]), 1, scope);
         MathFunction("atan2", p => Math.Atan2(p[0], p[1]), 2, scope);
@@ -129,64 +150,74 @@ public static class Environment
         MathFunction("tanh", p => Math.Tanh(p[0]), 1, scope);
         MathFunction("word", p => (int)p[0] & 0xffff, 1, scope);
 
-        scope.Define(TypeIds.Array, ArrayType);
-        BuiltInFunction("concat", new ConcatMethod(services), ArrayType);
-        BuiltInFunction("contains", new ContainsMethod(services), ArrayType);
-        BuiltInFunction("every", new EveryMethod(services), ArrayType);
-        BuiltInFunction("filter", new FilterMethod(services), ArrayType);
-        BuiltInFunction("indexOf", new IndexOfMethod(services), ArrayType);
-        BuiltInFunction("intersect", new IntersectMethod(services), ArrayType);
-        BuiltInFunction("len", new LenMethod(services), ArrayType);
-        BuiltInFunction("map", new MapMethod(services), ArrayType);
-        BuiltInFunction("reduce", new ReduceMethod(services), ArrayType);
-        BuiltInFunction("reverse", new ReverseMethod(services), ArrayType);
-        BuiltInFunction("size", new SizeMethod(services), ArrayType);
-        BuiltInFunction("skip", new SkipMethod(services), ArrayType);
-        BuiltInFunction("some", new SomeMethod(services), ArrayType);
-        BuiltInFunction("sort", new SortMethod(services), ArrayType);
-        BuiltInFunction("take", new TakeMethod(services), ArrayType);
-        BuiltInFunction("toString", new ToStringMethod(services), ArrayType);
-        BuiltInFunction("toTuple", new ToTupleMethod(services), ArrayType);
-        BuiltInFunction("union", new UnionMethod(services), ArrayType);
+        // Populate prototype methods once per process (do not define prototypes in the scope)
+        if (!s_prototypesInitialized)
+        {
+            lock (s_prototypeInitLock)
+            {
+                if (s_prototypesInitialized)
+                {
+                    // Another thread already initialized
+                    goto AfterPrototypeInit;
+                }
 
-        scope.Define(TypeIds.Dictionary, DictionaryType);
-        BuiltInFunction("concat", new ConcatMethod(services), DictionaryType);
-        BuiltInFunction("containsKey", new ContainsKeyMethod(services), DictionaryType);
-        BuiltInFunction("keys", new KeysMethod(services), DictionaryType);
-        BuiltInFunction("len", new LenMethod(services), DictionaryType);
-        BuiltInFunction("size", new SizeMethod(services), DictionaryType);
-        BuiltInFunction("toString", new ToStringMethod(services), DictionaryType);
+                BuiltInPrototypeFunction("concat", new ConcatMethod(services), ArrayType);
+                BuiltInPrototypeFunction("contains", new ContainsMethod(services), ArrayType);
+            BuiltInPrototypeFunction("every", new EveryMethod(services), ArrayType);
+            BuiltInPrototypeFunction("filter", new FilterMethod(services), ArrayType);
+            BuiltInPrototypeFunction("indexOf", new IndexOfMethod(services), ArrayType);
+            BuiltInPrototypeFunction("intersect", new IntersectMethod(services), ArrayType);
+            BuiltInPrototypeFunction("len", new LenMethod(services), ArrayType);
+            BuiltInPrototypeFunction("map", new MapMethod(services), ArrayType);
+            BuiltInPrototypeFunction("reduce", new ReduceMethod(services), ArrayType);
+            BuiltInPrototypeFunction("reverse", new ReverseMethod(services), ArrayType);
+            BuiltInPrototypeFunction("size", new SizeMethod(services), ArrayType);
+            BuiltInPrototypeFunction("skip", new SkipMethod(services), ArrayType);
+            BuiltInPrototypeFunction("some", new SomeMethod(services), ArrayType);
+            BuiltInPrototypeFunction("sort", new SortMethod(services), ArrayType);
+            BuiltInPrototypeFunction("take", new TakeMethod(services), ArrayType);
+            BuiltInPrototypeFunction("toString", new ToStringMethod(services), ArrayType);
+            BuiltInPrototypeFunction("toTuple", new ToTupleMethod(services), ArrayType);
+            BuiltInPrototypeFunction("union", new UnionMethod(services), ArrayType);
 
-        scope.Define(TypeIds.String, StringType);
-        BuiltInFunction("contains", new ContainsMethod(services), StringType);
-        BuiltInFunction("concat", new ConcatMethod(services), StringType);
-        BuiltInFunction("indexOf", new IndexOfMethod(services), StringType);
-        BuiltInFunction("len", new LenMethod(services), StringType);
-        BuiltInFunction("size", new SizeMethod(services), StringType);
-        BuiltInFunction("substring", new SubstringMethod(services), StringType);
-        BuiltInFunction("toArray", new ToArrayMethod(services), StringType);
-        BuiltInFunction("toLower", new ToLowerMethod(services), StringType);
-        BuiltInFunction("toString", new ToStringMethod(services), StringType);
-        BuiltInFunction("toUpper", new ToUpperMethod(services), StringType);
+            BuiltInPrototypeFunction("concat", new ConcatMethod(services), DictionaryType);
+            BuiltInPrototypeFunction("containsKey", new ContainsKeyMethod(services), DictionaryType);
+            BuiltInPrototypeFunction("keys", new KeysMethod(services), DictionaryType);
+            BuiltInPrototypeFunction("len", new LenMethod(services), DictionaryType);
+            BuiltInPrototypeFunction("size", new SizeMethod(services), DictionaryType);
+            BuiltInPrototypeFunction("toString", new ToStringMethod(services), DictionaryType);
 
-        scope.Define(TypeIds.Tuple, TupleType);
-        BuiltInFunction("contains", new ContainsMethod(services), TupleType);
-        BuiltInFunction("len", new LenMethod(services), TupleType);
-        BuiltInFunction("size", new SizeMethod(services), TupleType);
-        BuiltInFunction("skip", new SkipMethod(services), TupleType);
-        BuiltInFunction("take", new TakeMethod(services), TupleType);
-        BuiltInFunction("toArray", new ToArrayMethod(services), TupleType);
-        BuiltInFunction("toString", new ToStringMethod(services), TupleType);
+            BuiltInPrototypeFunction("contains", new ContainsMethod(services), StringType);
+            BuiltInPrototypeFunction("concat", new ConcatMethod(services), StringType);
+            BuiltInPrototypeFunction("indexOf", new IndexOfMethod(services), StringType);
+            BuiltInPrototypeFunction("len", new LenMethod(services), StringType);
+            BuiltInPrototypeFunction("size", new SizeMethod(services), StringType);
+            BuiltInPrototypeFunction("substring", new SubstringMethod(services), StringType);
+            BuiltInPrototypeFunction("toArray", new ToArrayMethod(services), StringType);
+            BuiltInPrototypeFunction("toLower", new ToLowerMethod(services), StringType);
+            BuiltInPrototypeFunction("toString", new ToStringMethod(services), StringType);
+            BuiltInPrototypeFunction("toUpper", new ToUpperMethod(services), StringType);
 
-        scope.Define(TypeIds.Primitive, PrimitiveType);
-        BuiltInFunction("toCbmFlt", new ToCbmFltMethod(services, false), PrimitiveType);
-        BuiltInFunction("toCbmFltp", new ToCbmFltMethod(services, true), PrimitiveType);
-        BuiltInFunction("size", new SizeMethod(services), PrimitiveType);
-        BuiltInFunction("toString", new ToStringMethod(services), PrimitiveType);
+            BuiltInPrototypeFunction("contains", new ContainsMethod(services), TupleType);
+            BuiltInPrototypeFunction("len", new LenMethod(services), TupleType);
+            BuiltInPrototypeFunction("size", new SizeMethod(services), TupleType);
+            BuiltInPrototypeFunction("skip", new SkipMethod(services), TupleType);
+            BuiltInPrototypeFunction("take", new TakeMethod(services), TupleType);
+            BuiltInPrototypeFunction("toArray", new ToArrayMethod(services), TupleType);
+            BuiltInPrototypeFunction("toString", new ToStringMethod(services), TupleType);
 
-        scope.Define(TypeIds.Function, FunctionType);
-        BuiltInFunction("toString", new ToStringMethod(services), FunctionType);
+            BuiltInPrototypeFunction("toCbmFlt", new ToCbmFltMethod(services, false), PrimitiveType);
+            BuiltInPrototypeFunction("toCbmFltp", new ToCbmFltMethod(services, true), PrimitiveType);
+            BuiltInPrototypeFunction("size", new SizeMethod(services), PrimitiveType);
+            BuiltInPrototypeFunction("toString", new ToStringMethod(services), PrimitiveType);
 
+            BuiltInPrototypeFunction("toString", new ToStringMethod(services), FunctionType);
+
+                s_prototypesInitialized = true;
+            }
+        }
+
+AfterPrototypeInit:
         // set architecture specific encodings
         EncodingMappings.MapEncodings(services.Encoding);
     }

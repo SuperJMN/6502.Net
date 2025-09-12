@@ -1,12 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.RegularExpressions;
+using Antlr4.Runtime;
 using CSharpFunctionalExtensions;
 using Sixty502DotNet.Runtime;
-using Sixty502DotNet.Shared;
+using SystemEnv = System.Environment;
 
-namespace Sixty502DotNet;
+namespace Sixty502DotNet.Shared;
 
 public class Z80Assembler
 {
@@ -17,52 +15,43 @@ public class Z80Assembler
     {
         try
         {
+            // Build options directly for Z80 assembly
             var options = new Options
             {
                 ArchitectureOptions = new ArchitectureOptions
                 {
-                    Cpuid = "z80",
-                    AutosizeRegisters = false,
-                    BranchAlways = false,
-                    LongAddressing = false,
+                    Cpuid = "z80"
                 },
                 GeneralOptions = new GeneralOptions
                 {
-                    CaseSensitive = false,
-                    ResetPCOnBank = false,
-                    Defines = Array.Empty<string>(),
-                    IncludePath = null,
-                    Sections = Array.Empty<string>()
+                    CaseSensitive = false // Z80 mnemonics in tests are uppercase (LD, PUSH). Parser expects case-insensitive keywords.
                 },
                 OutputOptions = new OutputOptions
                 {
-                    Format = null,
-                    NoSource = false,
                     NoAssembly = false,
                     NoDisassembly = false,
-                    LabelsOnly = false,
-                    ViceLabels = false,
-                    TruncateAssembly = false,
+                    NoSource = false,
                     VerboseList = false,
+                    TruncateAssembly = false
                 },
                 DiagnosticOptions = new DiagnosticOptions
                 {
-                    EchoEachPass = false,
                     NoHighlighting = true,
-                    WarnJumpBug = false,
-                    WarnTextInNonTextPseudoOp = false,
-                    WarningsAsErrors = false,
-                    WarnWhitespaceBeforeLabels = false,
-                    DoNotWarnAboutUnusedSections = true,
-                    WarnCaseMismatch = false,
-                    WarnRegistersAsIdentifiers = false,
-                    WarnSimplifyCallReturn = false,
-                    WarnOfUnreferencedSymbols = false,
+                    DoNotWarnAboutUnusedSections = false // equivalent to WarnNotUnusedSections = true
                 }
             };
 
+            // Keep original input; just ensure a trailing newline to help parser emit NL/EOS
+            var inputNormalized = input;
+            if (!inputNormalized.EndsWith("\n") && !inputNormalized.EndsWith("\r"))
+            {
+                inputNormalized += "\n";
+            }
+
+            // Prefix with .cpu to ensure Z80 is detected even if options are ignored
+            var source = $".cpu \"z80\"\n{inputNormalized}";
             var interpreter = new Shared.Interpreter(options, new FileSystemBinaryReader(null));
-            var state = interpreter.Exec(new List<string> { input }, new StringSourceFactory());
+            var state = interpreter.Exec(new List<string> { source }, new StringSourceFactory());
 
             if (state.Errors.Count > 0)
             {
@@ -71,6 +60,27 @@ public class Z80Assembler
                     var tokenPart = e.Token != null ? $" '{e.Token.Text}'" : string.Empty;
                     return $"{e.Line}:{e.Column}: {e.Message}{tokenPart}";
                 }));
+
+                // Extra: dump first tokens to help debug unexpected parse state
+                try
+                {
+                    var lexer = new SyntaxLexer(CharStreams.fromString(source))
+                    {
+                        IsCaseSensitive = options.GeneralOptions.CaseSensitive,
+                        ReservedWords = new Dictionary<string, int>(InstructionSets.GetByCpuid("z80"), options.GeneralOptions.CaseSensitive.ToStringComparer())
+                    };
+                    var ts = new CommonTokenStream(lexer);
+                    ts.Fill();
+                    var tokens = ts.GetTokens();
+                    var preview = tokens.Take(20)
+                        .Select(t => $"[{t.Line}:{t.Column}] {lexer.Vocabulary.GetSymbolicName(t.Type) ?? t.Type.ToString()} -> '{t.Text?.Replace("\r","\\r").Replace("\n","\\n")}'");
+                    var previewText = string.Join(SystemEnv.NewLine, preview);
+                    Console.WriteLine("=== Z80 Lexer preview (first 20 tokens) ===");
+                    Console.WriteLine(previewText);
+                    Console.WriteLine("=== END preview ===");
+                }
+                catch { }
+
                 return Result.Failure<AssemblyData>(errText);
             }
 

@@ -70,6 +70,11 @@ public class ScopedSymbol : SymbolBase, IScope
         }
         if (!_members.TryAdd(name, symbol))
         {
+            // If the existing and new symbols are both built-ins, treat as idempotent
+            if (_members.TryGetValue(name, out var existing) && existing.IsBuiltIn && symbol.IsBuiltIn)
+            {
+                return;
+            }
             throw new Exception($"Redefinition of symbol '{name}'");
         }
     }
